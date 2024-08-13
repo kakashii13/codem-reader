@@ -1,52 +1,66 @@
-import fs from "fs";
-
-// Load environment variables
-import { config } from "./utils/config";
-
 // Express server
-import express, { Request, Response } from "express";
+import express, { NextFunction, Request, Response } from "express";
 // Express server
 const app = express();
 
+import papaparse from "papaparse";
+
+import multer from "multer";
+const storage = multer.memoryStorage();
+const upload = multer({ storage });
+
 // Imports of the functions to get the pdf and extract text from it
 import { getPdf } from "./service/getPdf";
-import { parsePdf } from "./service/extractTextFromPdf";
-import { parseData } from "./service/parsedData";
+import { errorManagerMiddleware } from "./middleware/errorManager.middleware";
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+const parseFile = (file: any) => {
+  let csvData: any = [];
+  if (!file.buffer.length) throw new Error("File empty.");
+  papaparse.parse(file.buffer.toString(), {
+    header: false,
+    skipEmptyLines: true,
+    complete: (results: any) => {
+      csvData = results.data;
+    },
+  });
+
+  return csvData.flat();
+};
 
 // Route to get the pdf file
-app.get("/api/codem/:idPerson", async (req: Request, res: Response) => {
-  try {
-    // Get the idPerson from the query
-    const idPerson = req.params.idPerson as string;
-    // Get pdf from Codem
-    const pdfResult: any = await getPdf(idPerson);
+app.post(
+  "/api/codem",
+  upload.single("file"),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (!req.file) throw new Error("There isn't a file.");
 
-    if (pdfResult.pdfDownloaded) {
-      // Read the pdf generated from Codem
-      const pdf = fs.readFileSync(config.searchPdfPath);
-      // Extract text from pdf
-      const data = await parsePdf(pdf);
-      // Convert the extracted text to an object
-      const textParsed = parseData(data.text);
+      const fileParsed = parseFile(req.file);
 
-      console.log(textParsed);
+      if (!fileParsed.length) throw new Error("File is empty.");
+      console.log("Cuantos deberia buscar: ", fileParsed?.length);
+
+      // Get the data of pdfs from Codem
+      // The data is an array of objects with the extracted text from the pdf
+      const { data }: any = await getPdf(fileParsed);
+
+      console.log("Cuantos busco: ", data.length);
+      if (!data?.length) throw new Error("No data to found.");
 
       res.send({
         status: 200,
         message: "Search completed successfully",
-        data: textParsed,
+        data,
       });
-    } else {
-      res.send({
-        status: 500,
-        message: "An error occurred",
-        data: pdfResult,
-      });
+    } catch (error) {
+      next(error);
     }
-  } catch (error) {
-    console.error(error);
-    res.status(500).send("An error occurred");
   }
-});
+);
+
+app.use(errorManagerMiddleware);
 
 export { app };
