@@ -51,7 +51,7 @@ const getPdfFromCodem = async (page: any, idPerson: string, browser: any) => {
       timeout: 2000,
     });
 
-    // Downllad the pdf
+    // Download the pdf
     await page.click("table#ContentPlaceHolder1_DGOOSS a:first-child");
     // Configure the download path and allow the download
     const client = await page.target().createCDPSession();
